@@ -1,0 +1,19 @@
+[project]
+name = "uiuc-pipeline"
+version = "0.1.0"
+description = "Offline ETL: OpenAlex ingestion, faculty load & matching, embeddings, stats"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "uiuc-backend",
+    "httpx>=0.28",
+]
+
+[tool.uv.sources]
+uiuc-backend = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pipeline"]
