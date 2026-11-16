@@ -13,12 +13,13 @@ Snapshot date for "last two years": **2026-11-16 → from_publication_date = 202
 - [ ] Next.js app + Tailwind + shadcn/ui — Node 26.13.1 + pnpm 12.21.0 now installed; scaffold pending
 
 ## Milestone 1 — OpenAlex ingestion (D1)
-- [ ] `pipeline/fetch_works.py`: cursor paging, `per_page=200`, `select=` field list, retries on 429/5xx honoring `Retry-After`, resumable (store last cursor), writes `data/raw/works-*.jsonl`
-- [ ] Fetch institution record + topic hierarchy
-- [ ] Abstract reconstruction from `abstract_inverted_index`
-- [ ] Quality filter + `rank_score`; keep top ~20k (rules in `openalex.md`)
-- [ ] Load `works`, `authors`, `authorships`, `topics`, `work_topics`
-- [ ] Data-quality report (counts dropped per rule) → `data/processed/quality_report.json`
+- [x] `fetch_works`: key-free monthly slices + `page=` paging (cursor needs a key — ADR-010), `select=`, retries/backoff, budget guard, resumable checkpoint per page, gzip JSONL cache, verify vs `meta.count` → 26,960/26,960, $0.0147
+- [x] `fetch_institution` (raw OpenAlex record cached); topic hierarchy comes embedded in works
+- [x] Abstract reconstruction from `abstract_inverted_index`
+- [x] Quality filter (type, language, paratext, retracted, mis-affiliation, dedupe) + `rank_score` with citation shrinkage; top 20k
+- [x] Load `works`, `authors`, `authorships`, `topics`, `work_topics`, `work_institutions` via COPY (`pipeline/db_bulk.py`), idempotent, embeddings preserved on reload
+- [x] Data-quality report → `data/processed/reports/load_works.json` (numbers in `openalex.md`)
+- [x] Tests: client (retry/budget/key redaction), fetch (paging/resume/verify), transform, load (integration on `<db>_test`) — 35 passing
 
 ## Milestone 2 — Faculty & matching (D2)
 - [ ] Parse CSV (Postgres array keywords, NULL handling) → `faculty`

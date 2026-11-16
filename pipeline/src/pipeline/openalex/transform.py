@@ -29,6 +29,11 @@ ALLOWED_TYPES = frozenset(
     }
 )
 
+# Portal + assistant are English-only. Non-English records are also where OpenAlex
+# metadata errors concentrate (e.g. a 2025 Russian article with 8k+ citations that
+# raw-affiliates "University of Illinois"). None = language unknown -> keep.
+ALLOWED_LANGUAGES = frozenset({"en", None})
+
 # Raw affiliation text that plausibly refers to UIUC (used to catch mis-attributed works).
 UIUC_AFFILIATION_RE = re.compile(
     r"illinois|urbana|champaign|uiuc|beckman institute|ncsa", re.IGNORECASE
@@ -89,6 +94,8 @@ def drop_reason(raw: dict[str, Any], institution_id: str) -> str | None:
         return "missing_date"
     if raw.get("type") not in ALLOWED_TYPES:
         return "type_not_allowed"
+    if raw.get("language") not in ALLOWED_LANGUAGES:
+        return "non_english"
     if is_suspected_misaffiliation(raw, institution_id):
         return "suspected_misaffiliation"
     return None
@@ -171,15 +178,17 @@ def normalize_work(raw: dict[str, Any], institution_id: str) -> NormalizedWork:
     }
     nw = NormalizedWork(work=work, citation_percentile=cnp.get("value"))
 
+    raw_topics: list[dict[str, Any]] = list(raw.get("topics") or [])
+    if primary_topic and all(t.get("id") != primary_topic.get("id") for t in raw_topics):
+        raw_topics.append(primary_topic)
     topic_ids: set[str] = set()
-    for t in [*(raw.get("topics") or []), *([primary_topic] if primary_topic else [])]:
+    for t in raw_topics:
         row = _topic_row(t)
         if row["id"] in topic_ids:
             continue
         topic_ids.add(row["id"])
         nw.topics.append(row)
-        if t is not primary_topic or t.get("score") is not None:
-            nw.work_topics.append({"work_id": wid, "topic_id": row["id"], "score": t.get("score")})
+        nw.work_topics.append({"work_id": wid, "topic_id": row["id"], "score": t.get("score")})
 
     seen_authors: set[str] = set()
     seen_insts: set[str] = set()
@@ -255,9 +264,9 @@ def percentile_ranks(values: Sequence[float | None]) -> list[float]:
         return [0.0 for _ in values]
     first: dict[float, int] = {}
     last: dict[float, int] = {}
-    for i, v in enumerate(present):
-        first.setdefault(v, i)
-        last[v] = i
+    for i, pv in enumerate(present):
+        first.setdefault(pv, i)
+        last[pv] = i
     out: list[float] = []
     for v in values:
         if v is None:
@@ -270,36 +279,48 @@ def percentile_ranks(values: Sequence[float | None]) -> list[float]:
 
 @dataclass(frozen=True)
 class RankWeights:
-    citations: float = 0.5
-    fwci: float = 0.3
-    recency: float = 0.2
+    normalized_citations: float = 0.4  # OpenAlex citation_normalized_percentile (shrunk)
+    fwci: float = 0.2  # percentile of field-weighted citation impact (shrunk)
+    raw_citations: float = 0.2  # percentile of cited_by_count within the corpus
+    recency: float = 0.2  # linear 0..1 across the window
+    # Pseudo-count for shrinkage: with c citations, normalized metrics get weight c/(c+k).
+    prior_citations: float = 5.0
+
+
+def shrink(value: float, citations: int, prior_citations: float, prior: float = 0.5) -> float:
+    """Pull a normalized metric toward ``prior`` when it rests on few citations.
+
+    A 3-day-old paper with 2 citations can have FWCI 66 / percentile 1.0; that is noise,
+    not notability. Weight = c / (c + k) grows with evidence.
+    """
+    w = citations / (citations + prior_citations)
+    return w * value + (1 - w) * prior
 
 
 def compute_rank_scores(
     works: Sequence[NormalizedWork],
     window_start: date,
     window_end: date,
-    weights: RankWeights = RankWeights(),  # noqa: B008  (frozen, immutable default)
+    weights: RankWeights = RankWeights(),
 ) -> list[float]:
-    """Composite "notability" score in [0, 1].
-
-    - citations: OpenAlex citation_normalized_percentile (field- and year-normalized),
-      falling back to our own percentile of raw citations;
-    - fwci: percentile of field-weighted citation impact;
-    - recency: linear 0..1 across the window, so recent work is not buried by older work
-      that simply had more time to be cited.
-    """
-    own_cite_pct = percentile_ranks([float(w.work["cited_by_count"]) for w in works])
+    """Composite "notability" score in [0, 1] (weights documented in RankWeights)."""
+    cites = [int(w.work["cited_by_count"]) for w in works]
+    raw_pct = percentile_ranks([float(c) for c in cites])
     fwci_pct = percentile_ranks([w.work["fwci"] for w in works])
     span = max((window_end - window_start).days, 1)
+    k = weights.prior_citations
     scores = []
-    for w, own, fw in zip(works, own_cite_pct, fwci_pct, strict=True):
-        cite = w.citation_percentile if w.citation_percentile is not None else own
+    for w, c, raw, fw in zip(works, cites, raw_pct, fwci_pct, strict=True):
+        norm = w.citation_percentile if w.citation_percentile is not None else raw
         days = (w.work["publication_date"] - window_start).days
         recency = min(max(days / span, 0.0), 1.0)
-        scores.append(
-            round(weights.citations * cite + weights.fwci * fw + weights.recency * recency, 6)
+        score = (
+            weights.normalized_citations * shrink(norm, c, k)
+            + weights.fwci * shrink(fw, c, k)
+            + weights.raw_citations * raw
+            + weights.recency * recency
         )
+        scores.append(round(score, 6))
     return scores
 
 

@@ -51,18 +51,3 @@ def test_api_key_sent_but_never_in_error_message() -> None:
         client.get("/works", {"filter": "x"})
     assert seen["key"] == "SECRET123"
     assert "SECRET123" not in str(exc.value)
-
-
-def test_iter_cursor_follows_next_cursor_until_none() -> None:
-    pages = {
-        "*": {"meta": {"next_cursor": "c2"}, "results": [{"id": 1}]},
-        "c2": {"meta": {"next_cursor": "c3"}, "results": [{"id": 2}]},
-        "c3": {"meta": {"next_cursor": None}, "results": [{"id": 3}]},
-    }
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=pages[req.url.params["cursor"]])
-
-    with make_client(httpx.MockTransport(handler)) as client:
-        got = [(p["results"][0]["id"], nxt) for p, nxt in client.iter_cursor("/works", {})]
-    assert got == [(1, "c2"), (2, "c3"), (3, None)]

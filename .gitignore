@@ -6,6 +6,7 @@
 # Data (regenerable via `make etl`)
 data/raw/
 data/processed/
+data/*.log
 eval/results/
 
 # Python

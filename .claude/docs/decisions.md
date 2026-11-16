@@ -41,5 +41,10 @@ Format: context → decision → consequences. Append new ADRs; mark superseded 
 - **Decision:** Root virtual project with workspace members `uiuc-backend` (package `app`) and `uiuc-pipeline` (package `pipeline`, src layout). Pipeline depends on backend to reuse `app.db.models` and settings — single source of truth for schema.
 - **Consequences:** One lockfile/venv; API Docker image installs only `uiuc-backend`.
 
+## ADR-010 — Key-free OpenAlex fetch: monthly slices + `page=` paging
+- **Context:** OpenAlex requires an API key for `cursor=` paging beyond page 1 (verified 401). `page=` paging is key-free but capped at 10k results/query. User prefers $0 and no sign-up.
+- **Decision:** Split the window into calendar months (each < 2.5k works), page each with `sort=publication_date:asc`, checkpoint after every page, verify unique ids vs `meta.count`. Same ~135 calls (~$0.014) as cursor paging.
+- **Consequences:** Works with or without a key; resumable across days if the shared budget runs out. If a slice ever exceeds 10k, fetch aborts with a clear message (split smaller).
+
 ## ADR-007 — Fixed snapshot date
 - **Decision:** `SNAPSHOT_DATE=2026-11-16`, window start `2024-11-16`, stored in config and shown in UI ("data as of").

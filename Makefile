@@ -38,8 +38,10 @@ fmt:             ## auto-format
 	uv run ruff check --fix .
 	uv run ruff format .
 
-etl:             ## full data pipeline (implemented in Milestones 1-3)
-	@echo "ETL steps not implemented yet - see .claude/docs/plan.md"
+etl:             ## data pipeline (fetch is cached/resumable; later steps are offline)
+	uv run python -m pipeline.fetch_institution
+	uv run python -m pipeline.fetch_works
+	uv run python -m pipeline.load_works
 
 eval:            ## assistant golden-set evaluation (Milestone 6)
 	@echo "Eval not implemented yet - see .claude/docs/plan.md"

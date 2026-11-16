@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -148,15 +148,3 @@ class OpenAlexClient:
             return data
 
         raise AssertionError("unreachable")  # pragma: no cover
-
-    def iter_cursor(
-        self, path: str, params: dict[str, Any], start_cursor: str = "*"
-    ) -> Iterator[tuple[dict[str, Any], str | None]]:
-        """Yield ``(page, next_cursor)``; ``next_cursor`` is None on the last page."""
-        cursor: str | None = start_cursor
-        while cursor:
-            page = self.get(path, {**params, "cursor": cursor})
-            cursor = page.get("meta", {}).get("next_cursor")
-            if not page.get("results"):
-                cursor = None
-            yield page, cursor
