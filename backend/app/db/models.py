@@ -107,6 +107,10 @@ class Author(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     display_name: Mapped[str] = mapped_column(Text)
     orcid: Mapped[str | None] = mapped_column(String(64))
+    # All-time profile metrics from the OpenAlex author directory (null if not fetched)
+    works_count: Mapped[int | None] = mapped_column(Integer)
+    cited_by_count: Mapped[int | None] = mapped_column(Integer)
+    h_index: Mapped[int | None] = mapped_column(Integer)
 
     __table_args__ = (
         Index(
@@ -174,8 +178,10 @@ class Faculty(Base):
     name_norm: Mapped[str] = mapped_column(Text)
     position: Mapped[str | None] = mapped_column(Text)
     photo_url: Mapped[str | None] = mapped_column(Text)
+    name_variants: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # merged CSV rows
     keywords_raw: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
-    keywords_clean: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    keywords_clean: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # junk removed
+    keywords_top: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # ranked, for display
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
 
     author_links: Mapped[list["FacultyAuthorMap"]] = relationship(
@@ -211,6 +217,7 @@ class FacultyAuthorMap(Base):
     )
     confidence: Mapped[float] = mapped_column(Float)
     method: Mapped[str] = mapped_column(String(32))
+    evidence: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # name/topic scores etc.
 
     faculty: Mapped[Faculty] = relationship(back_populates="author_links")
     author: Mapped[Author] = relationship()

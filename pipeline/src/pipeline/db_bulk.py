@@ -69,3 +69,42 @@ def copy_upsert(
     )
     conn.exec_driver_sql(f"DROP TABLE {tmp}")
     return int(result.rowcount or 0)
+
+
+def copy_update(
+    session: Session,
+    model: type[DeclarativeBase],
+    rows: Sequence[dict[str, Any]],
+    *,
+    key: Sequence[str],
+) -> int:
+    """Bulk ``UPDATE`` existing rows (columns given in ``rows``) matched on ``key``.
+
+    Unlike an upsert, rows need not carry the table's NOT NULL columns.
+    """
+    if not rows:
+        return 0
+    table = cast(Table, model.__table__)
+    cols = list(rows[0].keys())
+    json_cols = {c for c in cols if isinstance(table.c[c].type, JSONB)}
+    collist = ", ".join(_q(c) for c in cols)
+    tmp = _q(f"_tmpu_{table.name}")
+    conn = session.connection()
+    conn.exec_driver_sql(f"DROP TABLE IF EXISTS {tmp}")
+    conn.exec_driver_sql(
+        f"CREATE TEMP TABLE {tmp} AS SELECT {collist} FROM {_q(table.name)} WITH NO DATA"  # noqa: S608
+    )
+    raw = conn.connection.driver_connection
+    assert raw is not None
+    with raw.cursor() as cur, cur.copy(f"COPY {tmp} ({collist}) FROM STDIN") as cp:
+        for r in rows:
+            cp.write_row(
+                [Jsonb(r[c]) if c in json_cols and r[c] is not None else r[c] for c in cols]
+            )
+    sets = ", ".join(f"{_q(c)} = s.{_q(c)}" for c in cols if c not in key)
+    cond = " AND ".join(f"t.{_q(k)} = s.{_q(k)}" for k in key)
+    result = conn.exec_driver_sql(
+        f"UPDATE {_q(table.name)} AS t SET {sets} FROM {tmp} AS s WHERE {cond}"  # noqa: S608
+    )
+    conn.exec_driver_sql(f"DROP TABLE {tmp}")
+    return int(result.rowcount or 0)
