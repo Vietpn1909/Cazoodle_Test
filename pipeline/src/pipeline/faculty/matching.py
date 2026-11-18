@@ -185,6 +185,59 @@ def author_name_score(
     return score, alias_only
 
 
+@dataclass(frozen=True)
+class UnresolvedAuthorship:
+    """A UIUC byline entry that OpenAlex did not resolve to an author id."""
+
+    work_id: str
+    author_name: str
+    text: str  # title / keywords / topic of the work
+
+
+UNRESOLVED_MIN_NAME = 0.93  # full first + last name (initials are not enough)
+
+
+def attribute_unresolved(
+    faculty: Sequence[FacultyInput],
+    rows: Sequence[UnresolvedAuthorship],
+    cfg: MatchConfig = MatchConfig(),
+) -> list[tuple[int, str]]:
+    """(faculty_id, work_id) for unresolved UIUC authorships that name a faculty member.
+
+    Requires a full-name match to exactly one directory member (shared names such as the
+    two "Bo Li" are skipped) and topical overlap above the noise floor, so a student who
+    shares a professor's name in an unrelated field is not attributed.
+    """
+    index: dict[str, set[int]] = defaultdict(set)
+    for f in faculty:
+        for n in f.names:
+            for k in index_keys(n):
+                index[k].add(f.id)
+    by_id = {f.id: f for f in faculty}
+    fac_docs = {f.id: terms(" ".join(f.keywords)) for f in faculty}
+    row_docs = [terms(r.text) for r in rows]
+    tfidf = TfIdf([*fac_docs.values(), *row_docs])
+    fac_vecs: dict[int, dict[str, float]] = {}
+
+    out: list[tuple[int, str]] = []
+    for r, doc in zip(rows, row_docs, strict=True):
+        cand = set().union(*(index.get(k, set()) for k in index_keys(r.author_name)))
+        scored = [(best_name_score(by_id[fid].names, [r.author_name]), fid) for fid in cand]
+        scored = [(s, fid) for s, fid in scored if s >= UNRESOLVED_MIN_NAME]
+        if not scored:
+            continue
+        best = max(s for s, _ in scored)
+        top = [fid for s, fid in scored if s == best]
+        if len(top) != 1:
+            continue
+        fid = top[0]
+        if fid not in fac_vecs:
+            fac_vecs[fid] = tfidf.vector(fac_docs[fid])
+        if TfIdf.cosine(fac_vecs[fid], tfidf.vector(doc)) >= cfg.topic_floor:
+            out.append((fid, r.work_id))
+    return out
+
+
 def topic_strength(cos: float, cfg: MatchConfig) -> float:
     return min(1.0, cos / cfg.topic_full) if cfg.topic_full > 0 else 0.0
 

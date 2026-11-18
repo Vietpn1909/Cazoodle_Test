@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Author, Authorship
+from pipeline.faculty.matching import FacultyInput, UnresolvedAuthorship, attribute_unresolved
 from pipeline.load_works import build_corpus, load_corpus
 from pipeline.openalex.transform import dedupe, normalize_title, normalize_work
 
@@ -90,6 +91,33 @@ def test_versions_matched_by_author_names_when_ids_differ() -> None:
     )
     kept, merged = dedupe([a, b])
     assert merged == 1 and kept[0].work["id"] == "W2"  # published version preferred
+
+
+FAC = [
+    FacultyInput(id=1, names=["Ziyi Zhao"], keywords=["graph neural networks", "deep learning"]),
+    FacultyInput(id=2, names=["Bo Li"], keywords=["adversarial machine learning"]),
+    FacultyInput(id=3, names=["Bo Li"], keywords=["spatial statistics"]),
+]
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        (
+            UnresolvedAuthorship("W1", "Zhao, Ziyi", "graph neural networks for molecules"),
+            [(1, "W1")],
+        ),
+        (UnresolvedAuthorship("W2", "Ziyi Zhao", "medieval french poetry"), []),  # off-topic
+        (UnresolvedAuthorship("W3", "Z. Zhao", "graph neural networks"), []),  # initials only
+        (UnresolvedAuthorship("W4", "Bo Li", "adversarial machine learning attacks"), []),  # shared
+    ],
+)
+def test_attribute_unresolved(row: UnresolvedAuthorship, expected: list[tuple[int, str]]) -> None:
+    filler = [
+        UnresolvedAuthorship(f"F{i}", "Nobody Here", t)
+        for i, t in enumerate(["soil crops", "tax law", "opera music", "protein folding"])
+    ]
+    assert attribute_unresolved(FAC, [row, *filler]) == expected
 
 
 @pytest.mark.db

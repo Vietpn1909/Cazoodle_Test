@@ -24,6 +24,7 @@ from pipeline.db_bulk import copy_upsert
 from pipeline.faculty.keywords import clean_keywords, normalize_keyword
 from pipeline.faculty.names import first_last
 from pipeline.faculty.parse import FacultyRecord, normalize_name, read_faculty_csv
+from pipeline.faculty.position import classify_position
 from pipeline.paths import FACULTY_CSV, REPORTS_DIR
 
 log = logging.getLogger("pipeline.load_faculty")
@@ -48,6 +49,7 @@ def faculty_rows(records: Sequence[FacultyRecord]) -> tuple[list[dict[str, Any]]
             nk = normalize_keyword(k)
             if nk not in clean_set:
                 dropped[nk] += 1
+        pos = classify_position(r.position)
         rows.append(
             {
                 "email": r.email,
@@ -55,6 +57,9 @@ def faculty_rows(records: Sequence[FacultyRecord]) -> tuple[list[dict[str, Any]]
                 "name_norm": normalize_name(r.name),
                 "name_variants": r.name_variants or None,
                 "position": r.position,
+                "rank": pos.rank,
+                "appointment": pos.appointment,
+                "is_emeritus": pos.is_emeritus,
                 "photo_url": r.photo_url,
                 "keywords_raw": r.keywords_raw,
                 "keywords_clean": clean,
@@ -67,6 +72,9 @@ def faculty_rows(records: Sequence[FacultyRecord]) -> tuple[list[dict[str, Any]]
             for r in records
             if r.name_variants
         ],
+        "ranks": dict(Counter(r["rank"] for r in rows).most_common()),
+        "appointments": dict(Counter(r["appointment"] for r in rows).most_common()),
+        "emeritus": sum(1 for r in rows if r["is_emeritus"]),
         "missing_photo": sum(1 for r in records if not r.photo_url),
         "missing_position": sum(1 for r in records if not r.position),
         "shared_names": sorted(

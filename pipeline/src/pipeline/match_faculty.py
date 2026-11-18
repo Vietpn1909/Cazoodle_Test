@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
-from app.db.models import Author, Faculty, FacultyAuthorMap
+from app.db.models import Author, Faculty, FacultyAuthorMap, FacultyWork
 from app.db.session import get_sessionmaker
 from pipeline.db_bulk import copy_update, copy_upsert
 from pipeline.faculty.keywords import rank_keywords
@@ -29,7 +29,9 @@ from pipeline.faculty.matching import (
     Candidate,
     FacultyInput,
     MatchConfig,
+    UnresolvedAuthorship,
     add_corpus_evidence,
+    attribute_unresolved,
     match_all,
     profiles_from_directory,
 )
@@ -48,6 +50,19 @@ CORPUS_SQL = text(
     JOIN works w ON w.id = a.work_id
     LEFT JOIN topics t ON t.id = w.primary_topic_id
     WHERE a.is_uiuc
+    """
+)
+
+
+UNRESOLVED_SQL = text(
+    """
+    SELECT a.work_id, a.author_name,
+           w.title || ' ' || coalesce(array_to_string(w.keywords, ' '), '') || ' ' ||
+           coalesce(t.name, '') || ' ' || coalesce(t.subfield, '') AS text
+    FROM authorships a
+    JOIN works w ON w.id = a.work_id
+    LEFT JOIN topics t ON t.id = w.primary_topic_id
+    WHERE a.is_uiuc AND a.author_id IS NULL
     """
 )
 
@@ -156,6 +171,7 @@ def write_results(
     accepted: Sequence[Candidate],
     profiles: Mapping[str, AuthorProfile],
     keywords_top: Sequence[dict[str, Any]],
+    unresolved_links: Sequence[tuple[int, str]] = (),
 ) -> None:
     # 1) author rows: linked directory authors (may be absent from the works corpus) and
     #    profile metrics for every directory author we already store.
@@ -195,6 +211,27 @@ def write_results(
     # 3) display keywords
     copy_update(session, Faculty, keywords_top, key=["id"])
 
+    # 4) faculty -> works: every authorship of a linked author id, plus unresolved UIUC
+    #    authorships attributed by name (see matching.attribute_unresolved)
+    session.execute(delete(FacultyWork))
+    session.execute(
+        text(
+            """
+            INSERT INTO faculty_works (faculty_id, work_id, via)
+            SELECT DISTINCT m.faculty_id, a.work_id, 'author_id'
+            FROM faculty_author_map m JOIN authorships a ON a.author_id = m.author_id
+            ON CONFLICT DO NOTHING
+            """
+        )
+    )
+    copy_upsert(
+        session,
+        FacultyWork,
+        [{"faculty_id": f, "work_id": w, "via": "unresolved_name"} for f, w in unresolved_links],
+        key=["faculty_id", "work_id"],
+        on_conflict="nothing",
+    )
+
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -210,10 +247,27 @@ def main(argv: list[str] | None = None) -> int:
 
     accepted, scored = match_all(faculty, profiles, cfg)
     keywords_top = compute_keywords_top(faculty, accepted, profiles)
+    with get_sessionmaker()() as session:
+        unresolved = [
+            UnresolvedAuthorship(work_id=r.work_id, author_name=r.author_name, text=r.text)
+            for r in session.execute(UNRESOLVED_SQL)
+        ]
+    unresolved_links = attribute_unresolved(faculty, unresolved, cfg)
     with get_sessionmaker()() as session, session.begin():
-        write_results(session, accepted, profiles, keywords_top)
+        write_results(session, accepted, profiles, keywords_top, unresolved_links)
 
     report = build_report(faculty, accepted, scored, profiles, cfg)
+    with get_sessionmaker()() as session:
+        via: dict[str, int] = dict(
+            session.execute(text("SELECT via, count(*) FROM faculty_works GROUP BY via")).all()
+        )
+        report["faculty_works"] = {
+            "by_via": via,
+            "unresolved_uiuc_authorships": len(unresolved),
+            "faculty_with_works": session.scalar(
+                text("SELECT count(DISTINCT faculty_id) FROM faculty_works")
+            ),
+        }
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     out = REPORTS_DIR / "match_faculty.json"
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
