@@ -22,11 +22,24 @@ Snapshot date for "last two years": **2026-11-16 → from_publication_date = 202
 - [x] Tests: client (retry/budget/key redaction), fetch (paging/resume/verify), transform, load (integration on `<db>_test`) — 35 passing
 
 ## Milestone 2 — Faculty & matching (D2)
-- [ ] Parse CSV (Postgres array keywords, NULL handling) → `faculty`
-- [ ] Keyword cleaning (blocklist, IDF ranking) → `keywords_clean`
-- [ ] Faculty ↔ OpenAlex author matching with confidence → `faculty_author_map`
-- [ ] Budgeted fallback `/authors?search=` for unmatched
-- [ ] Match-rate report (target ≥ 70% matched with confidence ≥ 0.7)
+- [x] Parse CSV (Postgres-array tokenizer, NULL, duplicate-email merge) → `faculty` (999), stable ids (upsert by email)
+- [x] Keyword cleaning (normalize, junk rules incl. people/venues, tested keep-list) → `keywords_clean`; evidence-ranked `keywords_top`
+- [x] UIUC author directory fetched (18,180, $0.0092, verified) — replaces per-name search (ADR-011)
+- [x] Faculty ↔ author matching (names + TF-IDF topic, calibrated, precision-first) → `faculty_author_map` with `evidence`; author h-index/works metrics
+- [x] ~~Budgeted fallback `/authors?search=`~~ dropped: 10× cost, unmatched are mostly people who left UIUC (ADR-011)
+- [x] Match report: **923/999 (92.4%)**, 1,114 links, random audit 20/20; deterministic & idempotent with `load_works` reruns
+- [x] Migration `0002` (name_variants, keywords_top, evidence, author metrics); tests: 114 passing
+
+## Data audit (2026-11-16) — done, see `.claude/docs/data-audit.md`, ADR-012
+- [x] Scope: lineage filter + system-only slice (27,403 raw); `fetch_full_authorships` (438 works, $0)
+- [x] Authorship model: nullable author_id, (work_id, author_order) key, duplicate-listing merge; migration 0004
+- [x] Version merge v2, generic-title rule, abstract cleaning, date_precision, field-fair ranking
+- [x] New stored fields (links, OA status, venue type, top-1/10%, funders, counts); migration 0003
+- [x] Faculty rank/appointment/emeritus; `faculty_works` (9,698 via ids + 98 via unresolved names)
+- [x] Client retries truncated JSON; 169 tests passing; every corpus work has a UIUC authorship
+- [ ] (Optional) portal "other outputs" counts from raw types (datasets/software) — do in M3 stats
+- Decision (2026-11-18, user): keep the corpus at **top 20,000** (spec range), not all 23,694 eligible. Old pre-audit raw cache deleted.
+- [x] Dev robustness: DB connect timeouts (app engine 5 s → health returns 503 instead of hanging; `db`-marked tests auto-skip in ~3 s when Postgres is down)
 
 ## Milestone 3 — Embeddings & stats (D2)
 - [ ] Embed works (title + abstract + topics) and faculty (clean keywords + top topics)

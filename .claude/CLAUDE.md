@@ -45,7 +45,7 @@ This Windows machine has **no `make`** — run the underlying commands directly 
 | Migrations | `cd backend && uv run alembic upgrade head` · new: `uv run alembic revision --autogenerate -m "msg"` then `uv run alembic check` |
 | API dev server | `cd backend && uv run uvicorn app.main:app --reload --port 8000` |
 | Tests | `uv run pytest` (all; DB must be up — DB tests use a separate `<db>_test` database) · `uv run pytest -m "not db"` |
-| ETL so far | `uv run python -m pipeline.fetch_institution` → `pipeline.fetch_works` (cached, resumable) → `pipeline.load_works` (offline) |
+| ETL so far | `uv run python -m pipeline.<step>` in order: `fetch_institution` → `fetch_works` → `fetch_full_authorships` → `fetch_authors` (network, cached, resumable) → `load_works` → `load_faculty` → `match_faculty` (offline) |
 | Lint/types | `uv run ruff check . && uv run ruff format --check . && uv run mypy backend/app pipeline/src` |
 | Eval | `make eval` — not implemented yet |
 | Frontend | `pnpm --dir frontend dev` — not scaffolded yet. Node 26.13.1 + pnpm 12.21.0 installed system-wide (2026-11-16); shells opened before that may need a VS Code restart to see them on PATH |
@@ -54,10 +54,13 @@ This Windows machine has **no `make`** — run the underlying commands directly 
 - UIUC OpenAlex id `I157725225`, ROR `047426m28`, geo 40.11059, -88.20727 (Urbana, IL).
 - Works with `from_publication_date:2024-11-16`: **26,962** (14,445 type=article; 22,268 with abstract).
 - OpenAlex is **budgeted per USD**: no key = $0.10/day shared per IP; free key = $1/day. List call ≈ $0.0001. Always cache raw responses. **`cursor=` paging needs a key** → we use monthly slices + `page=` (ADR-010), no key required.
-- Corpus loaded: 26,960 raw → 23,650 eligible → **20,000 works** in DB (details/numbers in `.claude/docs/openalex.md`).
+- Corpus: 27,403 raw (lineage scope) → 23,6xx eligible → **20,000 works** in DB; every work has ≥1 UIUC authorship (details in `.claude/docs/openalex.md`, audit in `.claude/docs/data-audit.md`).
+- ~7.5% of OpenAlex authorships have **no author id** → `authorships.author_id` is nullable, key = (work_id, author_order). Never write `NOT IN (SELECT author_id ...)` without `IS NOT NULL`.
+- Editing code that contains regex escapes (word boundary, whitespace class, ...): use Write/Edit, never shell heredocs + Python string replace - escapes silently became control characters twice during the audit.
 - Data is noisy: the most-cited "UIUC" work of the window is a mis-affiliated Russian paper → quality filter required.
-- Author disambiguation is fragmented: "Jiawei Han" → 5 OpenAlex author ids at UIUC.
-- CSV: 1,000 rows; cols `email,name,photo_url,position,keywords`; 105 photo NULL; keywords are Postgres-array strings, 23–574 per person (avg ~122), noisy.
+- Author disambiguation is fragmented and names collide: 8 "Jiawei Han" author ids at UIUC (mostly other people).
+- CSV: 1,000 rows → 999 faculty (one duplicate email merged); two "Bo Li", two "Yi Lu"; keywords are Postgres-array strings, noisy.
+- Faculty matched to OpenAlex authors: **923/999 (92.4%)**, precision-first (details/limits in `.claude/docs/faculty-data.md`).
 
 ## Working rules
 - Read the relevant doc in `.claude/docs/` before working on an area; keep docs in sync when decisions change.
