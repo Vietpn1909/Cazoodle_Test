@@ -27,17 +27,22 @@
 ## Data model
 ```
 institution(id PK, openalex_id, ror, name, geo jsonb, images jsonb, facts jsonb, sources jsonb)
-works(id PK 'W…', doi, title, abstract, publication_date, publication_year, type, language,
-      cited_by_count, fwci, is_oa, oa_url, venue_name, primary_topic_id FK,
-      rank_score float, embedding vector(384), tsv tsvector GENERATED)
-authors(id PK 'A…', display_name, orcid)
-authorships(work_id FK, author_id FK, position, is_corresponding bool, is_uiuc bool,
-            raw_affiliation text, PRIMARY KEY(work_id, author_id))
+works(id PK 'W…', doi, title, abstract, publication_date, date_precision, publication_year, type,
+      language, cited_by_count, fwci, citation_percentile, is_top_1pct, is_top_10pct, is_oa,
+      oa_status, oa_url, landing_page_url, venue_name, venue_type, venue_id, primary_topic_id FK,
+      keywords[], sdgs jsonb, funders jsonb, authors_count, institutions_count, countries_count,
+      version_ids[], rank_score, embedding vector(384), tsv tsvector GENERATED)
+authors(id PK 'A…', display_name, orcid, works_count, cited_by_count, h_index)  -- metrics from directory
+authorships(work_id FK, author_order, author_id FK NULL (unresolved), author_name, author_position,
+            is_corresponding, is_uiuc, raw_affiliation, PK(work_id, author_order),
+            UNIQUE(work_id, author_id) WHERE author_id IS NOT NULL)
 topics(id PK 'T…', name, subfield_id, subfield, field_id, field, domain_id, domain)
 work_topics(work_id FK, topic_id FK, score float)
-faculty(id PK serial, email UNIQUE, name, name_norm, position, photo_url,
-        keywords_raw text[], keywords_clean text[], embedding vector(384))
-faculty_author_map(faculty_id FK, author_id FK, confidence float, method text)
+faculty(id PK serial, email UNIQUE, name, name_norm, name_variants text[], position, rank,
+        appointment, is_emeritus, photo_url,
+        keywords_raw text[], keywords_clean text[], keywords_top text[], embedding vector(384))
+faculty_author_map(faculty_id FK, author_id FK, confidence float, method text, evidence jsonb)
+faculty_works(faculty_id FK, work_id FK, via 'author_id'|'unresolved_name')   -- derived
 work_institutions(work_id, institution_id, name, country_code)   -- collaborators
 stats_kv(key PK, value jsonb, computed_at)                         -- precomputed widgets
 meta(key PK, value)            -- snapshot_date, embedding_model, pipeline version

@@ -46,5 +46,15 @@ Format: context → decision → consequences. Append new ADRs; mark superseded 
 - **Decision:** Split the window into calendar months (each < 2.5k works), page each with `sort=publication_date:asc`, checkpoint after every page, verify unique ids vs `meta.count`. Same ~135 calls (~$0.014) as cursor paging.
 - **Consequences:** Works with or without a key; resumable across days if the shared budget runs out. If a slice ever exceeds 10k, fetch aborts with a clear message (split smaller).
 
+## ADR-011 — Faculty matching: bulk author directory + precision-first scoring
+- **Context:** Per-name `/authors?search=` costs $0.001/call (10× a list call) and would blow the free budget for 999 people. OpenAlex fragments people into several ids and many UIUC people share names (e.g. 8 "Jiawei Han" ids at UIUC).
+- **Decision:** Download the UIUC author directory once (works_count ≥ 5, 3 slices, ~$0.009) and match offline: name score (variants, nicknames, transliteration) × TF-IDF topic similarity, with thresholds calibrated on near-certain vs random pairs; ambiguous names require topical closeness to the best candidate; merged profiles (display name of another person) are never linked. Wrong links (someone else's papers on a profile) are worse than missing ones.
+- **Consequences:** 92.4% matched, deterministic, explainable (`evidence` JSON). Unmatched are mostly people who left UIUC; no per-name fallback search. Lexical similarity may be revisited with embeddings in M3 if needed.
+
+## ADR-012 — Data-audit corrections (scope, authorship model, versions, fairness)
+- **Context:** Audit on real data (`.claude/docs/data-audit.md`) found coverage gaps (sub-units, truncated and unresolved authorships), version duplicates and field bias in the top-20k cut.
+- **Decision:** (1) scope by authorship lineage + campus-checked system-only works; (2) complete truncated author lists via the free single-work endpoint, store first 100 + all UIUC authorships; (3) `authorships` keyed by byline position with nullable `author_id`; (4) version merge by DOI or title + shared author-name tokens, canonical = published version; (5) field-normalized citation percentile, neutral missing FWCI; (6) derived `faculty_works` incl. name-attributed unresolved authorships.
+- **Consequences:** Every corpus work has a UIUC authorship; fairer cut; richer fields for the portal. Queries joining `authors` must handle NULL `author_id` (`IS NOT NULL` in `NOT IN` subqueries).
+
 ## ADR-007 — Fixed snapshot date
 - **Decision:** `SNAPSHOT_DATE=2026-11-16`, window start `2024-11-16`, stored in config and shown in UI ("data as of").
