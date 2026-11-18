@@ -49,6 +49,20 @@ class LLMProvider(Protocol):
 - Optional reranker (`BAAI/bge-reranker-base`) if time permits.
 - **Faculty score** = 0.5·cos(query, faculty embedding) + 0.5·mean(top-3 cos(query, their UIUC works)); return evidence works.
 
+### Retrieval probes after embedding (2026-11-18, vector-only, bge-small int8)
+- Healthcare CV works well: *"computer vision for healthcare and medical imaging"* -> biomedical segmentation, radiograph
+  representation learning, ultrasound (sim 0.75-0.78). Faculty: Forsyth, Minh Do, Bresler, Gruev... but the
+  "healthcare" half is weaker than "computer vision" -> use hybrid (FTS must-match terms) and show evidence works.
+- **Query wording matters**: the full question ("most recent papers on ...") pulls generic AI papers; the router must
+  strip filler ("what are", "most recent", "UIUC papers on") before embedding, and put the recency intent in `sort_by`.
+- **Risk for required query #1 (AI in war/conflict)**: the corpus holds very few papers truly on this topic. The nearest
+  works (sim ~0.78-0.80) are agentic-AI security/attack-defense papers plus a few close ones ("Anatomy of Conflict",
+  "SmartBook: AI-assisted situation reports for intelligence analysts", "TAB-Fields: mission-aware adversarial planning"),
+  and the score gap to unrelated AI papers is small. The relevance gate must not just take top-N: require a topical
+  FTS match or a margin over the corpus baseline, and say clearly when evidence is thin instead of padding the list.
+  (The earlier "23/30 AI x military works kept" figure came from a loose regex with many false positives, e.g.
+  "military veteran entrepreneurship"; do not rely on it.)
+
 ## Answer rules (all providers)
 - Use only tool results; every paper/faculty mentioned must carry a citation id that exists in results.
 - If nothing relevant passes the gate, say so and suggest nearby topics.

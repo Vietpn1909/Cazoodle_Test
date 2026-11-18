@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "uiuc-backend",
     "httpx>=0.28",
+    "fastembed>=0.9.1",
 ]
 
 [tool.uv.sources]

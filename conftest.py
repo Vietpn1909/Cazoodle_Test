@@ -21,6 +21,24 @@ from app.db.base import Base
 ROOT = Path(__file__).parent
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--run-slow",
+        action="store_true",
+        default=False,
+        help="also run tests marked `slow` (they load the real embedding model)",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if config.getoption("--run-slow"):
+        return
+    skip = pytest.mark.skip(reason="slow: loads the real model (use --run-slow)")
+    for item in items:
+        if "slow" in item.keywords:
+            item.add_marker(skip)
+
+
 @pytest.fixture(scope="session")
 def db_available() -> bool:
     url = make_url(get_settings().database_url).set(database="postgres")

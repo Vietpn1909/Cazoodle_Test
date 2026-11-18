@@ -42,8 +42,9 @@ Snapshot date for "last two years": **2026-11-16 → from_publication_date = 202
 - [x] Dev robustness: DB connect timeouts (app engine 5 s → health returns 503 instead of hanging; `db`-marked tests auto-skip in ~3 s when Postgres is down)
 
 ## Milestone 3 — Embeddings & stats (D2)
-- [ ] Embed works (title + abstract + topics) and faculty (clean keywords + top topics)
-- [ ] HNSW indexes; `tsvector` GIN indexes
+- [x] Embed works (title + topic hierarchy + keywords + abstract) and faculty (ranked keywords + topics of their works):
+      20,000 works (22.7 min CPU) + 999 faculty (30 s), all 384-d unit vectors; hash-based freshness, resumable (ADR-013)
+- [x] HNSW indexes (verified used by EXPLAIN) and `tsvector` GIN indexes for works and faculty (`faculty.profile_text` + `tsv`, migration 0005)
 - [ ] Precompute stats tables (KPIs, output by month, fields/subfields, rising topics, top venues, collaborators, SDGs)
 - [ ] Institution metadata JSON (Wikipedia/Wikimedia Commons, with source URLs + licenses)
 

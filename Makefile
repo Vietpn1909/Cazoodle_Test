@@ -46,6 +46,7 @@ etl:             ## data pipeline (fetch is cached/resumable; later steps are of
 	uv run python -m pipeline.load_works
 	uv run python -m pipeline.load_faculty
 	uv run python -m pipeline.match_faculty
+	uv run python -m pipeline.embed
 
 eval:            ## assistant golden-set evaluation (Milestone 6)
 	@echo "Eval not implemented yet - see .claude/docs/plan.md"

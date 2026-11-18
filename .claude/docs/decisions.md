@@ -26,6 +26,21 @@ Format: context → decision → consequences. Append new ADRs; mark superseded 
 - **Context:** Must work without paid keys; corpus is small.
 - **Decision:** Local CPU embeddings, computed in the pipeline, stored in pgvector. Model name stored in DB metadata.
 - **Consequences:** ~10–20 min one-off embedding on CPU; swappable later (re-embed required).
+- **Update 2026-11-18 (measured):** fastembed serves the **int8-quantized** ONNX build of bge-small. On this
+  24-core machine throughput is capped at ~15 texts/s whatever the thread count, `parallel=` workers or
+  `max_length` (20,000 works = 22.7 min, 999 faculty = 30 s), so the step is resumable instead of faster.
+  Vectors are unit-length (norm 1.0000), so cosine similarity == dot product.
+
+## ADR-013 — Embedding freshness by content hash; faculty `profile_text`
+- **Context:** Works/faculty are reloaded whenever the audit rules or the CSV change; re-embedding 20k works
+  costs 23 minutes, but silently keeping vectors of changed text would corrupt search.
+- **Decision:** Store `embedding_hash` (sha256/16) of the embedded text next to each vector; the step embeds
+  only rows whose hash differs (or all, if `meta.embedding_model` changed), commits per batch, and clears the
+  vector when a faculty member no longer has any text. Work text = title + topic hierarchy + OpenAlex keywords +
+  abstract (<=1,500 chars). Faculty text = expertise only (no name/position): ranked cleaned keywords + the topics
+  of their matched works, stored as `faculty.profile_text` and full-text indexed (`faculty.tsv`) for hybrid search.
+- **Consequences:** Idempotent, resumable, no stale vectors. Run order: `load_works` -> `load_faculty` ->
+  `match_faculty` -> `embed` (faculty text depends on matched works).
 
 ## ADR-006 — Python backend + Next.js frontend
 - **Context:** Data/LLM ecosystem is strongest in Python; grading emphasizes full-stack + UI.

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import EMBEDDING_DIM, Base
 
+FACULTY_TSV_EXPR = "to_tsvector('english', coalesce(profile_text, ''))"
 WORK_TSV_EXPR = (
     "setweight(to_tsvector('english', coalesce(title, '')), 'A') || "
     "setweight(to_tsvector('english', coalesce(abstract, '')), 'B')"
@@ -98,6 +99,8 @@ class Work(Base):
     version_ids: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # merged duplicates
     rank_score: Mapped[float | None] = mapped_column(Float, index=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
+    # hash of the text that produced `embedding`; a different hash means the vector is stale
+    embedding_hash: Mapped[str | None] = mapped_column(String(16))
     tsv: Mapped[str | None] = mapped_column(TSVECTOR, Computed(WORK_TSV_EXPR, persisted=True))
 
     primary_topic: Mapped[Topic | None] = relationship()
@@ -233,7 +236,11 @@ class Faculty(Base):
     keywords_raw: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
     keywords_clean: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # junk removed
     keywords_top: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # ranked, for display
+    # Expertise text (keywords + topics of their works): what is embedded and full-text indexed
+    profile_text: Mapped[str | None] = mapped_column(Text)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
+    embedding_hash: Mapped[str | None] = mapped_column(String(16))
+    tsv: Mapped[str | None] = mapped_column(TSVECTOR, Computed(FACULTY_TSV_EXPR, persisted=True))
 
     author_links: Mapped[list["FacultyAuthorMap"]] = relationship(
         back_populates="faculty", cascade="all, delete-orphan"
@@ -246,6 +253,7 @@ class Faculty(Base):
             postgresql_using="gin",
             postgresql_ops={"name_norm": "gin_trgm_ops"},
         ),
+        Index("ix_faculty_tsv", "tsv", postgresql_using="gin"),
         Index(
             "ix_faculty_embedding_hnsw",
             "embedding",
