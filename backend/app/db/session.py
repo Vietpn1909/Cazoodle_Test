@@ -16,7 +16,13 @@ from app.core.config import get_settings
 
 @lru_cache
 def get_engine() -> Engine:
-    return create_engine(get_settings().database_url, pool_pre_ping=True, pool_size=10)
+    # connect_timeout: fail fast (health check returns 503) instead of hanging if Postgres is down
+    return create_engine(
+        get_settings().database_url,
+        pool_pre_ping=True,
+        pool_size=10,
+        connect_args={"connect_timeout": 5},
+    )
 
 
 @lru_cache

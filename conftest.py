@@ -22,10 +22,36 @@ ROOT = Path(__file__).parent
 
 
 @pytest.fixture(scope="session")
+def db_available() -> bool:
+    url = make_url(get_settings().database_url).set(database="postgres")
+    engine = create_engine(url, connect_args={"connect_timeout": 3})
+    try:
+        with engine.connect():
+            return True
+    except OperationalError:
+        return False
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _skip_db_tests_without_db(request: pytest.FixtureRequest) -> None:
+    """Tests marked ``db`` are skipped (fast) when Postgres is not reachable."""
+    if request.node.get_closest_marker("db") and not request.getfixturevalue("db_available"):
+        pytest.skip("Postgres not reachable (docker compose up -d db)")
+
+
+@pytest.fixture(scope="session")
 def db_engine() -> Iterator[Engine]:
     url = make_url(get_settings().database_url)
     test_url = url.set(database=f"{url.database}_test")
-    admin = create_engine(url.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    # Short connect timeout: if Postgres is down, DB tests are skipped in ~3 s instead of
+    # hanging on the driver's default timeout.
+    admin = create_engine(
+        url.set(database="postgres"),
+        isolation_level="AUTOCOMMIT",
+        connect_args={"connect_timeout": 3},
+    )
     try:
         with admin.connect() as conn:
             exists = conn.scalar(
