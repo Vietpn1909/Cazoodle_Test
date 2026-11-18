@@ -50,6 +50,22 @@ meta(key PK, value)            -- snapshot_date, embedding_model/dim/embedded_at
 ```
 Indexes: HNSW (`vector_cosine_ops`, verified used by `EXPLAIN`) on `works.embedding`, `faculty.embedding`; GIN on `works.tsv`, `faculty.tsv`; GIN trigram on `authors.display_name`, `faculty.name_norm`; btree on `works.publication_date`, `works.rank_score`.
 
+## Precomputed statistics (`stats_kv`, step `python -m pipeline.stats`)
+One JSONB document per key; the API only reads rows. **Scope = all eligible works (23,694), not the 20,000
+indexed ones** (the top-N cut is ranked by notability + recency and would show fake growth: 100% of 2026 kept but
+only 58-70% of late 2024/2025); each document carries `scope`.
+
+| key | content | feeds |
+|---|---|---|
+| `overview` | works (eligible/indexed), citations (total/mean/median), OA share + status mix, FWCI median/p90, top-1%/10% counts, UIUC authors, faculty directory/matched/with works, window, snapshot | KPI tiles |
+| `output` | works per month (day-precision dates only, stacked by type bucket, `partial` first/last month), per year, year-only-date counts, type mix | output chart |
+| `fields` | domain -> field -> subfield tree (works, citations, top topics), top 30 topics | treemap |
+| `rising_topics` | share growth between the two window halves for topics and subfields (+ declining); min support 40/80 works | focus areas |
+| `venues` | top 20 journals/conferences/series, top 10 repositories, platform/venue counts | output |
+| `sdgs` | works per UN SDG (17) | output |
+| `funders` | top 20 funders, share with funder data | output |
+| `collaborators` | top 30 external institutions and countries, international share, `excluded_uiuc_units` (transparency) | collaboration |
+
 ## REST API (prefix `/api`)
 | Method | Path | Purpose |
 |---|---|---|

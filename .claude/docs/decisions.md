@@ -71,5 +71,19 @@ Format: context → decision → consequences. Append new ADRs; mark superseded 
 - **Decision:** (1) scope by authorship lineage + campus-checked system-only works; (2) complete truncated author lists via the free single-work endpoint, store first 100 + all UIUC authorships; (3) `authorships` keyed by byline position with nullable `author_id`; (4) version merge by DOI or title + shared author-name tokens, canonical = published version; (5) field-normalized citation percentile, neutral missing FWCI; (6) derived `faculty_works` incl. name-attributed unresolved authorships.
 - **Consequences:** Every corpus work has a UIUC authorship; fairer cut; richer fields for the portal. Queries joining `authors` must handle NULL `author_id` (`IS NOT NULL` in `NOT IN` subqueries).
 
+## ADR-014 — Portal statistics from the eligible set, with explicit data-quality rules
+- **Context:** The loaded corpus (top 20k) over-represents recent works, so charts built from it would be wrong.
+  The data also contains year-only dates (Jan 1), bulk auto-generated records and UIUC units that OpenAlex does not
+  list under UIUC's lineage.
+- **Decision:** Compute statistics from all works that pass the quality filters (23,694) and say so (`scope`,
+  "indexed for the assistant: 20,000"). Monthly series use day-precision dates only (2,137 year-only dates reported
+  separately). "Rising topics" compare *shares* between the two window halves and only consider works with an identified
+  venue (otherwise ~90 species-description records made "Hemiptera Insect Studies" the top riser). UIUC-internal units
+  (Woese Institute, Prairie Research Institute, Natural History Survey, Cancer Center at Illinois, CABBI, ...) are excluded
+  from "collaborating institutions" when >= 90% of their appearances sit on the same authorship as UIUC (>= 15 works);
+  genuine joint institutes stay (Zhejiang University 0.73). The excluded list is stored in the stats for inspection.
+- **Consequences:** Honest numbers, explainable rules; a few small partners with near-1.0 ratios can be dropped
+  (Dali University, 28 works). Venue platforms (Springer eBooks) are not ranked as venues.
+
 ## ADR-007 — Fixed snapshot date
 - **Decision:** `SNAPSHOT_DATE=2026-11-16`, window start `2024-11-16`, stored in config and shown in UI ("data as of").

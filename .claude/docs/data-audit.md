@@ -44,7 +44,9 @@ that matter are now unit/integration tests (169 passing).
 | Faculty with ≥1 corpus work | 830 | **837** (`faculty_works`) |
 
 ## Known limitations (accepted)
-- Top-20k cut (spec): 7 tangential "AI × military" works with 0 citations fall below the cut (23/30 kept).
+- Top-20k cut (spec): works below the cut are mostly low-citation 2024/2025 items. (An earlier note claimed "23/30 AI x military works kept";
+  that came from a loose keyword regex full of false positives, e.g. "military veteran entrepreneurship". The real number of
+  papers on AI in war/conflict is small — see `llm-assistant.md`, retrieval probes.)
 - "Univ. of Illinois (United States)" (SPIE style) gives no campus → those system-only works are excluded.
 - Two directory entries named "Bo Li" share near-identical CSV keywords → their split of same-name OpenAlex ids is unreliable.
 - `date_precision` is a heuristic (Jan 1); month-level precision (day = 1) is not flagged.

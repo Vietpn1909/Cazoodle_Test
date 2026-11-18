@@ -45,7 +45,8 @@ Snapshot date for "last two years": **2026-11-16 → from_publication_date = 202
 - [x] Embed works (title + topic hierarchy + keywords + abstract) and faculty (ranked keywords + topics of their works):
       20,000 works (22.7 min CPU) + 999 faculty (30 s), all 384-d unit vectors; hash-based freshness, resumable (ADR-013)
 - [x] HNSW indexes (verified used by EXPLAIN) and `tsvector` GIN indexes for works and faculty (`faculty.profile_text` + `tsv`, migration 0005)
-- [ ] Precompute stats tables (KPIs, output by month, fields/subfields, rising topics, top venues, collaborators, SDGs)
+- [x] Precompute stats (`python -m pipeline.stats` -> `stats_kv`, 8 keys, ~40 KB): KPIs, output by month, field tree, rising
+      topics, venues, SDGs, funders, collaborators — from all 23,694 eligible works (ADR-014); 13 unit/integration tests
 - [ ] Institution metadata JSON (Wikipedia/Wikimedia Commons, with source URLs + licenses)
 
 ## Milestone 4 — Backend API (D3)

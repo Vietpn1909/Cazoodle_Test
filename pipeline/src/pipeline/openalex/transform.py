@@ -216,6 +216,10 @@ class NormalizedWork:
     work_institutions: list[dict[str, Any]] = field(default_factory=list)
     citation_percentile: float | None = None
     field_id: str | None = None  # primary topic's field (for field-normalized ranking)
+    # Institutions listed on the *same authorship* as UIUC (an author's second affiliation).
+    # Not persisted; statistics use it to tell UIUC-internal units (Woese Institute, Prairie
+    # Research Institute, ... almost always co-listed with UIUC) from external partners.
+    co_uiuc_institution_ids: set[str] = field(default_factory=set)
 
 
 def _topic_row(t: dict[str, Any]) -> dict[str, Any]:
@@ -313,6 +317,8 @@ def normalize_work(raw: dict[str, Any], institution_id: str) -> NormalizedWork:
         raw_aff = " | ".join(a.get("raw_affiliation_strings") or []) or None
         for inst in insts:  # collaboration stats use the complete list
             iid = short_id(inst.get("id"))
+            if iid and is_uiuc and not is_uiuc_institution(inst, institution_id):
+                nw.co_uiuc_institution_ids.add(iid)
             if iid and iid not in seen_insts:
                 seen_insts.add(iid)
                 nw.work_institutions.append(

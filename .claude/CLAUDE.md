@@ -45,7 +45,7 @@ This Windows machine has **no `make`** — run the underlying commands directly 
 | Migrations | `cd backend && uv run alembic upgrade head` · new: `uv run alembic revision --autogenerate -m "msg"` then `uv run alembic check` |
 | API dev server | `cd backend && uv run uvicorn app.main:app --reload --port 8000` |
 | Tests | `uv run pytest` (all; DB must be up — DB tests use a separate `<db>_test` database) · `uv run pytest -m "not db"` · `uv run pytest --run-slow` also runs tests that load the real embedding model |
-| ETL so far | `uv run python -m pipeline.<step>` in order: `fetch_institution` → `fetch_works` → `fetch_full_authorships` → `fetch_authors` (network, cached, resumable) → `load_works` → `load_faculty` → `match_faculty` → `embed` (offline; `embed` ~23 min for 20k works, resumable) |
+| ETL so far | `uv run python -m pipeline.<step>` in order: `fetch_institution` → `fetch_works` → `fetch_full_authorships` → `fetch_authors` (network, cached, resumable) → `load_works` → `load_faculty` → `match_faculty` → `embed` (offline; `embed` ~23 min for 20k works, resumable) → `stats` (offline, ~25 s). `fetch_institution` also saves UIUC lineage units |
 | Lint/types | `uv run ruff check . && uv run ruff format --check . && uv run mypy backend/app pipeline/src` |
 | Eval | `make eval` — not implemented yet |
 | Frontend | `pnpm --dir frontend dev` — not scaffolded yet. Node 26.13.1 + pnpm 12.21.0 installed system-wide (2026-11-16); shells opened before that may need a VS Code restart to see them on PATH |
