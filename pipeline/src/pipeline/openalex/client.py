@@ -144,7 +144,16 @@ class OpenAlexClient:
                 snippet = resp.text[:200].replace(self._api_key or "\0", "***")
                 raise OpenAlexError(f"GET {path}: HTTP {resp.status_code}: {snippet}")
 
-            data: dict[str, Any] = resp.json()
+            try:
+                data: dict[str, Any] = resp.json()
+            except ValueError:
+                # Observed: a 200 response truncated mid-body (~2.2 MB page) -> transient.
+                if last_try:
+                    raise OpenAlexError(f"GET {path}: invalid JSON after retries") from None
+                wait = self._backoff(attempt, None)
+                log.warning("GET %s returned invalid/truncated JSON; retry in %.0fs", path, wait)
+                self._sleep(wait)
+                continue
             return data
 
         raise AssertionError("unreachable")  # pragma: no cover

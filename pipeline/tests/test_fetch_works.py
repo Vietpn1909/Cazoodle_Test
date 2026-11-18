@@ -53,9 +53,16 @@ def test_month_slices_cover_window_exactly() -> None:
 
 def test_work_slices_filters() -> None:
     s = work_slices("I1", date(2025, 1, 15), date(2025, 2, 3))
-    assert [x.key for x in s] == ["2025-01-15", "2025-02-01"]
+    assert [x.key for x in s] == ["2025-01-15", "2025-02-01", "zz-system-only"]
+    # lineage filter: includes works of UIUC sub-units (NCSA, State Geological Survey, ...)
     assert s[1].filter == (
-        "institutions.id:I1,from_publication_date:2025-02-01,to_publication_date:2025-02-03"
+        "authorships.institutions.lineage:I1,"
+        "from_publication_date:2025-02-01,to_publication_date:2025-02-03"
+    )
+    # parent-system-only works (campus decided later from raw affiliation text)
+    assert s[2].filter == (
+        "institutions.id:I2801919071,authorships.institutions.lineage:!I1,"
+        "from_publication_date:2025-01-15,to_publication_date:2025-02-03"
     )
 
 

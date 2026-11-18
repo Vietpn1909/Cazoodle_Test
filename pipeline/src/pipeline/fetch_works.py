@@ -1,5 +1,8 @@
 """Step 1: download all UIUC works in the snapshot window from OpenAlex (raw, cached, resumable).
 
+Scope: works with an authorship at UIUC *or a UIUC sub-unit* (``authorships.institutions.
+lineage`` — NCSA, State Geological Survey, ...; +265 works vs a direct-id filter), plus works
+tagged only with the parent U. of Illinois System (filtered later by raw affiliation).
 Slices = calendar months (each ~1-2.3k works, far below the 10k ``page=`` cap); sort
 ``publication_date:asc`` (ties ordered by id -> stable pages). See ``openalex/sliced.py``.
 
@@ -53,7 +56,12 @@ WORK_FIELDS = (
     "is_paratext",
     "institutions_distinct_count",
     "countries_distinct_count",
+    "funders",
 )
+# Parent "University of Illinois System": some works are tagged only with it (ambiguous
+# between UIUC / UIC / UIS) -> fetched separately, kept only if raw affiliation text
+# points to the Urbana-Champaign campus (see transform.is_uiuc_authorship).
+ILLINOIS_SYSTEM_ID = "I2801919071"
 
 
 def month_slices(start: date, end: date) -> list[tuple[date, date]]:
@@ -69,16 +77,27 @@ def month_slices(start: date, end: date) -> list[tuple[date, date]]:
 
 
 def work_slices(institution_id: str, start: date, end: date) -> list[Slice]:
-    return [
+    """Monthly slices of works with a UIUC (or UIUC sub-unit, via lineage) authorship,
+    plus one slice of works tagged only with the parent University of Illinois System."""
+    window = f"from_publication_date:{start.isoformat()},to_publication_date:{end.isoformat()}"
+    monthly = [
         Slice(
             key=s.isoformat(),
             filter=(
-                f"institutions.id:{institution_id},"
+                f"authorships.institutions.lineage:{institution_id},"
                 f"from_publication_date:{s.isoformat()},to_publication_date:{e.isoformat()}"
             ),
         )
         for s, e in month_slices(start, end)
     ]
+    system_only = Slice(
+        key="zz-system-only",
+        filter=(
+            f"institutions.id:{ILLINOIS_SYSTEM_ID},"
+            f"authorships.institutions.lineage:!{institution_id},{window}"
+        ),
+    )
+    return [*monthly, system_only]
 
 
 def iter_raw_works(out_dir: Path = WORKS_RAW_DIR) -> Iterator[dict[str, Any]]:

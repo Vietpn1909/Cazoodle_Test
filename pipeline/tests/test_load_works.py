@@ -36,7 +36,7 @@ def test_build_corpus_reports_drops_and_cuts() -> None:
     assert r["raw_records"] == 6
     assert r["dropped"]["duplicate_id"] == 1
     assert r["dropped"]["paratext"] == 1
-    assert r["dropped"]["duplicate_doi_or_title"] == 1
+    assert r["dropped"]["merged_versions"] == 1
     assert (r["eligible_after_filters"], r["selected"], r["cut_by_rank"]) == (3, 2, 1)
     scores = [w.work["rank_score"] for w in corpus.works]
     assert scores == sorted(scores, reverse=True)

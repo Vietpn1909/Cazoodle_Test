@@ -16,7 +16,7 @@ import logging
 import sys
 import time
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -37,6 +37,7 @@ from app.db.models import (
 )
 from app.db.session import get_sessionmaker
 from pipeline.db_bulk import copy_upsert
+from pipeline.fetch_full_authorships import load_full_authorships
 from pipeline.fetch_works import iter_raw_works
 from pipeline.openalex.transform import (
     NormalizedWork,
@@ -45,6 +46,7 @@ from pipeline.openalex.transform import (
     dedupe,
     drop_reason,
     normalize_work,
+    short_id,
 )
 from pipeline.paths import REPORTS_DIR
 
@@ -66,8 +68,12 @@ def build_corpus(
     window_start: date,
     window_end: date,
     top_n: int,
+    full_authorships: Mapping[str, list[dict[str, Any]]] | None = None,
 ) -> Corpus:
+    """``full_authorships``: complete author lists for works truncated at 100 authors."""
+    full_authorships = full_authorships or {}
     total = 0
+    completed = 0
     drops: Counter[str] = Counter()
     seen: set[str] = set()
     candidates: list[NormalizedWork] = []
@@ -80,6 +86,10 @@ def build_corpus(
             drops["duplicate_id"] += 1
             continue
         seen.add(raw["id"])
+        full = full_authorships.get(str(short_id(raw["id"])))
+        if raw.get("is_authors_truncated") and full:
+            raw = {**raw, "authorships": full, "is_authors_truncated": False}
+            completed += 1
         reason = drop_reason(raw, institution_id)
         if reason:
             drops[reason] += 1
@@ -87,7 +97,7 @@ def build_corpus(
         candidates.append(normalize_work(raw, institution_id))
 
     unique, n_dupes = dedupe(candidates)
-    drops["duplicate_doi_or_title"] = n_dupes
+    drops["merged_versions"] = n_dupes
 
     scores = compute_rank_scores(unique, window_start, window_end)
     for w, s in zip(unique, scores, strict=True):
@@ -97,6 +107,7 @@ def build_corpus(
 
     report = {
         "raw_records": total,
+        "truncated_authorships_completed": completed,
         "dropped": dict(drops.most_common()),
         "eligible_after_filters": len(unique),
         "top_n": top_n,
@@ -108,6 +119,14 @@ def build_corpus(
         "selected_languages": count_by(w.work["language"] for w in selected),
         "selected_by_year": count_by(w.work["publication_year"] for w in selected),
         "selected_with_abstract": sum(1 for w in selected if w.work["abstract"]),
+        "selected_year_precision_dates": sum(
+            1 for w in selected if w.work["date_precision"] == "year"
+        ),
+        "selected_with_merged_versions": sum(1 for w in selected if w.work["version_ids"]),
+        "selected_without_uiuc_authorship": sum(
+            1 for w in selected if not any(a["is_uiuc"] for a in w.authorships)
+        ),
+        "selected_by_field": count_by(w.field_id for w in selected),
     }
     return Corpus(works=selected, report=report)
 
@@ -135,7 +154,7 @@ def load_corpus(session: Session, works: Sequence[NormalizedWork], meta: dict[st
     # Child tables are fully derived from the current corpus -> rebuild.
     session.execute(text("TRUNCATE authorships, work_topics, work_institutions"))
     children: list[tuple[Any, list[str], list[dict[str, Any]]]] = [
-        (Authorship, ["work_id", "author_id"], [a for w in works for a in w.authorships]),
+        (Authorship, ["work_id", "author_order"], [a for w in works for a in w.authorships]),
         (WorkTopic, ["work_id", "topic_id"], [t for w in works for t in w.work_topics]),
         (
             WorkInstitution,
@@ -146,10 +165,13 @@ def load_corpus(session: Session, works: Sequence[NormalizedWork], meta: dict[st
     for model, key, rows in children:
         copy_upsert(session, model, rows, key=key, on_conflict="nothing")
 
-    # Authors no longer referenced anywhere.
+    # Authors no longer referenced anywhere. The IS NOT NULL filter matters: authorship
+    # author_id is nullable and `x NOT IN (... NULL ...)` is never true in SQL.
     session.execute(
         delete(Author)
-        .where(~Author.id.in_(select(Authorship.author_id)))
+        .where(
+            ~Author.id.in_(select(Authorship.author_id).where(Authorship.author_id.is_not(None)))
+        )
         .where(~Author.id.in_(select(FacultyAuthorMap.author_id))),
         execution_options={"synchronize_session": False},
     )
@@ -170,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         window_start=settings.window_start,
         window_end=settings.snapshot_date,
         top_n=args.top_n,
+        full_authorships=load_full_authorships(),
     )
     if not corpus.works:
         log.error("No works found in data/raw - run `python -m pipeline.fetch_works` first.")

@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -70,17 +71,31 @@ class Work(Base):
     title: Mapped[str] = mapped_column(Text)
     abstract: Mapped[str | None] = mapped_column(Text)
     publication_date: Mapped[date] = mapped_column(Date, index=True)
+    # "year" when OpenAlex only knows the year (stored as Jan 1), else "day"
+    date_precision: Mapped[str] = mapped_column(String(8), server_default="day")
     publication_year: Mapped[int] = mapped_column(Integer)
     type: Mapped[str] = mapped_column(String(64))
     language: Mapped[str | None] = mapped_column(String(16))
     cited_by_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     fwci: Mapped[float | None] = mapped_column(Float)
+    citation_percentile: Mapped[float | None] = mapped_column(Float)  # field/year-normalized
+    is_top_1pct: Mapped[bool] = mapped_column(default=False, server_default="false")
+    is_top_10pct: Mapped[bool] = mapped_column(default=False, server_default="false")
     is_oa: Mapped[bool] = mapped_column(default=False, server_default="false")
+    oa_status: Mapped[str | None] = mapped_column(String(16))  # gold/green/hybrid/...
     oa_url: Mapped[str | None] = mapped_column(Text)
+    landing_page_url: Mapped[str | None] = mapped_column(Text)  # link when there is no DOI
     venue_name: Mapped[str | None] = mapped_column(Text)
+    venue_type: Mapped[str | None] = mapped_column(String(32))  # journal/conference/repository
+    venue_id: Mapped[str | None] = mapped_column(String(32))
     primary_topic_id: Mapped[str | None] = mapped_column(ForeignKey("topics.id"))
     keywords: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     sdgs: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    funders: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    authors_count: Mapped[int | None] = mapped_column(Integer)  # full count (stored: <=100+UIUC)
+    institutions_count: Mapped[int | None] = mapped_column(Integer)
+    countries_count: Mapped[int | None] = mapped_column(Integer)
+    version_ids: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # merged duplicates
     rank_score: Mapped[float | None] = mapped_column(Float, index=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
     tsv: Mapped[str | None] = mapped_column(TSVECTOR, Computed(WORK_TSV_EXPR, persisted=True))
@@ -127,20 +142,52 @@ class Authorship(Base):
 
     __tablename__ = "authorships"
 
+    # A byline position. ~7.5% of OpenAlex authorships are not resolved to an author id
+    # (null), incl. 5% of UIUC ones -> author_id is nullable and the key is the position.
     work_id: Mapped[str] = mapped_column(
         ForeignKey("works.id", ondelete="CASCADE"), primary_key=True
     )
-    author_id: Mapped[str] = mapped_column(
-        ForeignKey("authors.id", ondelete="CASCADE"), primary_key=True, index=True
+    author_order: Mapped[int] = mapped_column(Integer, primary_key=True)
+    author_id: Mapped[str | None] = mapped_column(
+        ForeignKey("authors.id", ondelete="CASCADE"), index=True
     )
-    author_order: Mapped[int] = mapped_column(Integer)
+    author_name: Mapped[str] = mapped_column(Text)  # as listed on the work
     author_position: Mapped[str | None] = mapped_column(String(16))  # first / middle / last
     is_corresponding: Mapped[bool] = mapped_column(default=False, server_default="false")
     is_uiuc: Mapped[bool] = mapped_column(default=False, server_default="false", index=True)
     raw_affiliation: Mapped[str | None] = mapped_column(Text)
 
     work: Mapped[Work] = relationship(back_populates="authorships")
-    author: Mapped[Author] = relationship()
+    author: Mapped[Author | None] = relationship()
+
+    __table_args__ = (
+        # an identified author appears at most once per work
+        Index(
+            "uq_authorships_work_author",
+            "work_id",
+            "author_id",
+            unique=True,
+            postgresql_where=text("author_id IS NOT NULL"),
+        ),
+    )
+
+
+class FacultyWork(Base):
+    """Works attributed to a faculty member (derived by match_faculty).
+
+    ``via``: ``author_id`` (UIUC authorship of a linked OpenAlex author) or
+    ``unresolved_name`` (UIUC authorship without author id whose listed name matches).
+    """
+
+    __tablename__ = "faculty_works"
+
+    faculty_id: Mapped[int] = mapped_column(
+        ForeignKey("faculty.id", ondelete="CASCADE"), primary_key=True
+    )
+    work_id: Mapped[str] = mapped_column(
+        ForeignKey("works.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    via: Mapped[str] = mapped_column(String(16))
 
 
 class WorkTopic(Base):
@@ -177,6 +224,10 @@ class Faculty(Base):
     name: Mapped[str] = mapped_column(Text)
     name_norm: Mapped[str] = mapped_column(Text)
     position: Mapped[str | None] = mapped_column(Text)
+    # Derived from `position` (pipeline.faculty.position)
+    rank: Mapped[str | None] = mapped_column(String(32))
+    appointment: Mapped[str | None] = mapped_column(String(16))
+    is_emeritus: Mapped[bool] = mapped_column(default=False, server_default="false")
     photo_url: Mapped[str | None] = mapped_column(Text)
     name_variants: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # merged CSV rows
     keywords_raw: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)

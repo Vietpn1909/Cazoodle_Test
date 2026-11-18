@@ -25,6 +25,20 @@ def test_retries_on_5xx_then_succeeds() -> None:
         assert client.last_budget.remaining_usd == 0.05
 
 
+def test_truncated_json_body_is_retried() -> None:
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(200, content=b'{"results": [{"id": "W1"}, {"id": ')
+        return httpx.Response(200, json={"results": [{"id": "W1"}]})
+
+    with make_client(httpx.MockTransport(handler)) as client:
+        assert client.get("/works") == {"results": [{"id": "W1"}]}
+    assert calls["n"] == 2
+
+
 def test_budget_exhausted_stops_without_retry() -> None:
     calls = {"n": 0}
 
