@@ -14,4 +14,6 @@ FULL_AUTHORSHIPS_DIR = OPENALEX_RAW_DIR / "full_authorships"
 INSTITUTION_RAW_FILE = OPENALEX_RAW_DIR / "institution.json"
 INSTITUTION_CHILDREN_FILE = OPENALEX_RAW_DIR / "institution_children.json"
 
+INSTITUTION_RAW_DIR = RAW_DIR / "institution"  # cached web responses (Wikipedia, Commons, ...)
+
 FACULTY_CSV = REPO_ROOT / "illinois-researchers.csv"

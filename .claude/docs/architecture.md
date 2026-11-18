@@ -26,7 +26,13 @@
 
 ## Data model
 ```
-institution(id PK, openalex_id, ror, name, geo jsonb, images jsonb, facts jsonb, sources jsonb)
+institution(id PK 'I157725225', ror, name, geo jsonb, images jsonb, facts jsonb, sources jsonb, updated_at)
+   geo    = {label, city, region, country, campus{lat,lon} (Wikipedia, map pin), city_point{lat,lon} (OpenAlex), metro}
+   facts  = {short_name, tagline, description (Wikipedia, CC BY-SA), founded + founded_verified, motto, website,
+             wikipedia_url, wikidata_id, ror, openalex{works_count, cited_by_count, h_index, i10_index (all-time)}}
+   images = [{role hero|gallery, title, url (1920px thumbnail), width, height, author, license, license_url,
+             source_url, attribution}]   -- hero first; every image has a free licence and a named author
+   sources= [{name, url, license, used_for, retrieved_at}]   -- OpenAlex, ROR, Wikipedia, Wikidata, Commons
 works(id PK 'W…', doi, title, abstract, publication_date, date_precision, publication_year, type,
       language, cited_by_count, fwci, citation_percentile, is_top_1pct, is_top_10pct, is_oa,
       oa_status, oa_url, landing_page_url, venue_name, venue_type, venue_id, primary_topic_id FK,

@@ -85,5 +85,20 @@ Format: context → decision → consequences. Append new ADRs; mark superseded 
 - **Consequences:** Honest numbers, explainable rules; a few small partners with near-1.0 ratios can be dropped
   (Dali University, 28 works). Venue platforms (Springer eBooks) are not ranked as venues.
 
+## ADR-015 — Institutional metadata from open sources (Wikipedia, Wikidata, ROR, Commons)
+- **Context:** The brief asks for location and campus imagery "gathered independently from public online sources".
+  Wikidata's enrolment figures conflict (42,606 undated vs 83,119 in 2021) while Wikipedia says "over 59,000".
+- **Decision:** Build the `institution` row from five open sources and store, for every item, its source URL and licence.
+  Show only facts that sources state consistently (founded 1867 is confirmed by Wikipedia, ROR and Wikidata -> `founded_verified`),
+  quote the Wikipedia description with attribution instead of parsing conflicting numbers. Images: Wikidata's main image
+  (P18, a 9996x3528 panorama) is the hero; the gallery takes the best photo per landmark query, accepting only CC BY /
+  CC BY-SA / CC0 / public domain with a named author, >= 1600 px wide, landscape, and rejecting logos, maps and plaque
+  close-ups (a "dedication plaque" photo was caught by viewing the images). All 6 images were inspected visually.
+  Thumbnails are hot-linked from Wikimedia, which allows it, so nothing is bundled.
+- **Consequences:** No API key, no scraping of illinois.edu, reproducible (`data/raw/institution/` caches every response, each
+  URL requested once). Wikimedia answers `httpx` with 403 ("robot policy") but accepts the stdlib `urllib` with the same
+  User-Agent, so `pipeline/institution/web.py` uses urllib, spaces requests >= 1 s and honours `Retry-After`
+  (it waited the requested 50 s on a 429). The User-Agent is generic and carries no personal contact data.
+
 ## ADR-007 — Fixed snapshot date
 - **Decision:** `SNAPSHOT_DATE=2026-11-16`, window start `2024-11-16`, stored in config and shown in UI ("data as of").

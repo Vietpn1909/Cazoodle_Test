@@ -47,7 +47,9 @@ Snapshot date for "last two years": **2026-11-16 → from_publication_date = 202
 - [x] HNSW indexes (verified used by EXPLAIN) and `tsvector` GIN indexes for works and faculty (`faculty.profile_text` + `tsv`, migration 0005)
 - [x] Precompute stats (`python -m pipeline.stats` -> `stats_kv`, 8 keys, ~40 KB): KPIs, output by month, field tree, rising
       topics, venues, SDGs, funders, collaborators — from all 23,694 eligible works (ADR-014); 13 unit/integration tests
-- [ ] Institution metadata JSON (Wikipedia/Wikimedia Commons, with source URLs + licenses)
+- [x] Institution metadata (`python -m pipeline.institution` -> `institution` row): location (campus + city coordinates), founded 1867
+      (3 sources agree), motto, description, 6 CC-licensed campus photos (hero + 5) with author/licence, 5 sources with licences
+      (ADR-015); 42 tests incl. polite-client backoff and image-curation rules
 
 ## Milestone 4 — Backend API (D3)
 - [ ] Endpoints per `architecture.md` with Pydantic schemas + OpenAPI
