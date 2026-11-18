@@ -5,30 +5,20 @@ from pathlib import Path
 import httpx
 import pytest
 
-from pipeline.fetch_works import (
-    FetchState,
-    fetch_works,
-    iter_raw_works,
-    month_slices,
-    verify,
-)
+from pipeline.fetch_works import month_slices, work_slices
 from pipeline.openalex.client import OpenAlexClient
+from pipeline.openalex.sliced import FetchState, Slice, fetch_sliced, iter_raw, verify
 
-# Two months: Jan has 3 works (2 pages at per_page=2 is simulated via PER_PAGE patch), Feb 1.
-DATA = {
-    "2025-01-15": ["W1", "W2", "W3"],
-    "2025-02-01": ["W4"],
-}
+DATA = {"jan": ["W1", "W2", "W3"], "feb": ["W4"]}
+SLICES = [Slice(key="2025-01-15", filter="jan"), Slice(key="2025-02-01", filter="feb")]
 
 
-def _client(requested: list[tuple[str, int]], per_page: int) -> OpenAlexClient:
+def _client(requested: list[tuple[str, int]]) -> OpenAlexClient:
     def handler(req: httpx.Request) -> httpx.Response:
-        flt = req.url.params["filter"]
-        start = flt.split("from_publication_date:")[1].split(",")[0]
-        page = int(req.url.params["page"])
-        requested.append((start, page))
-        ids = DATA[start]
-        chunk = ids[(page - 1) * per_page : page * per_page]
+        flt, page = req.url.params["filter"], int(req.url.params["page"])
+        requested.append((flt, page))
+        ids = DATA[flt]
+        chunk = ids[(page - 1) * 2 : page * 2]
         body = {"meta": {"count": len(ids)}, "results": [{"id": i} for i in chunk]}
         return httpx.Response(200, json=body, headers={"x-ratelimit-cost-usd": "0.0001"})
 
@@ -37,18 +27,18 @@ def _client(requested: list[tuple[str, int]], per_page: int) -> OpenAlexClient:
 
 @pytest.fixture(autouse=True)
 def small_pages(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("pipeline.fetch_works.PER_PAGE", 2)
+    monkeypatch.setattr("pipeline.openalex.sliced.PER_PAGE", 2)
 
 
 def _run(tmp_path: Path, requested: list[tuple[str, int]], **kw: object) -> FetchState:
-    with _client(requested, per_page=2) as c:
-        return fetch_works(
+    with _client(requested) as c:
+        return fetch_sliced(
             c,
             tmp_path,
-            institution_id="I1",
-            window_start=date(2025, 1, 15),
-            window_end=date(2025, 2, 10),
+            endpoint="/works",
+            slices=SLICES,
             select="id",
+            sort="x",
             **kw,  # type: ignore[arg-type]
         )
 
@@ -61,6 +51,14 @@ def test_month_slices_cover_window_exactly() -> None:
     ]
 
 
+def test_work_slices_filters() -> None:
+    s = work_slices("I1", date(2025, 1, 15), date(2025, 2, 3))
+    assert [x.key for x in s] == ["2025-01-15", "2025-02-01"]
+    assert s[1].filter == (
+        "institutions.id:I1,from_publication_date:2025-02-01,to_publication_date:2025-02-03"
+    )
+
+
 def test_fetch_pages_each_slice_and_resumes(tmp_path: Path) -> None:
     requested: list[tuple[str, int]] = []
     s1 = _run(tmp_path, requested, max_pages=1)
@@ -68,8 +66,8 @@ def test_fetch_pages_each_slice_and_resumes(tmp_path: Path) -> None:
 
     s2 = _run(tmp_path, requested)
     assert s2.done and s2.records == 4 and s2.expected == 4
-    assert requested == [("2025-01-15", 1), ("2025-01-15", 2), ("2025-02-01", 1)]
-    assert sorted(w["id"] for w in iter_raw_works(tmp_path)) == ["W1", "W2", "W3", "W4"]
+    assert requested == [("jan", 1), ("jan", 2), ("feb", 1)]  # nothing fetched twice
+    assert sorted(w["id"] for w in iter_raw(tmp_path)) == ["W1", "W2", "W3", "W4"]
     assert verify(tmp_path, s2) == {"expected": 4, "unique": 4, "mismatches": {}}
 
     _run(tmp_path, requested)  # completed fetch is a no-op
@@ -77,14 +75,15 @@ def test_fetch_pages_each_slice_and_resumes(tmp_path: Path) -> None:
 
 
 def test_refuses_to_mix_different_parameters(tmp_path: Path) -> None:
-    FetchState(institution_id="I1", window="other", select="id").save(tmp_path / "_state.json")
+    FetchState(signature="other").save(tmp_path / "_state.json")
     with pytest.raises(SystemExit):
         _run(tmp_path, [])
 
 
-def test_state_roundtrip(tmp_path: Path) -> None:
+def test_verify_flags_missing_records(tmp_path: Path) -> None:
     requested: list[tuple[str, int]] = []
-    _run(tmp_path, requested)
-    loaded = FetchState.load(tmp_path / "_state.json")
-    assert loaded is not None and loaded.done
-    assert json.loads((tmp_path / "_state.json").read_text())["slices"]["2025-01-15"]["count"] == 3
+    state = _run(tmp_path, requested)
+    (tmp_path / "2025-02-01_p001.jsonl.gz").unlink()
+    assert verify(tmp_path, state)["mismatches"] == {"2025-02-01": {"expected": 1, "unique": 0}}
+    loaded = json.loads((tmp_path / "_state.json").read_text())
+    assert loaded["slices"]["2025-01-15"]["count"] == 3
